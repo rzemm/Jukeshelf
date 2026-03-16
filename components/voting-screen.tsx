@@ -33,6 +33,8 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
   const [voteCounts, setVoteCounts] = useState<VoteCountMap>(initialVoteCounts);
   const [isSubmittingVote, setIsSubmittingVote] = useState(false);
 
+  const songsForVoting = songs;
+
   useEffect(() => {
     let unsubscribeVotes: (() => void) | undefined;
 
@@ -62,8 +64,8 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
   }, [roundId]);
 
   const votedSong = useMemo(
-    () => songs.find((song) => song.id === votedSongId) ?? null,
-    [songs, votedSongId],
+    () => songsForVoting.find((song) => song.id === votedSongId) ?? null,
+    [songsForVoting, votedSongId],
   );
 
   const totalVotes = useMemo(() => getTotalVotes(voteCounts), [voteCounts]);
@@ -130,7 +132,7 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
       </header>
 
       <ul className="grid gap-4 sm:grid-cols-3">
-        {songs.map((song) => {
+        {songsForVoting.map((song) => {
           const votes = voteCounts[song.id] ?? 0;
           const percentage = getVotePercentage(votes, totalVotes);
 
