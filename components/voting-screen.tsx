@@ -74,6 +74,12 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
       });
   }, []);
 
+  useEffect(() => {
+    ensureAnonymousAuth().catch((error) => {
+      console.error("Anonymous auth failed:", error);
+    });
+  }, []);
+
   const votedSong = useMemo(
     () => songsForVoting.find((song) => song.id === votedSongId) ?? null,
     [songsForVoting, votedSongId],
