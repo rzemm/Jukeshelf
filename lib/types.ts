@@ -6,6 +6,19 @@ export type Song = {
   thumbnail: string;
 };
 
+export type Playlist = {
+  id: string;
+  name: string;
+};
+
+export type ActiveRound = {
+  id: string;
+  playlistId: string;
+  songIds: string[];
+  songs: Song[];
+  isActive: boolean;
+};
+
 export type VotingRound = {
   id: string;
   songIds: string[];

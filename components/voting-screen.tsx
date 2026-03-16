@@ -2,7 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ensureAnonymousAuth } from "@/lib/auth";
+import { saveVoteToFirestore, subscribeToRoundVotes } from "@/lib/firestore";
 import { Song } from "@/lib/types";
 
 type VoteCountMap = Record<string, number>;
@@ -11,6 +13,7 @@ type VotingScreenProps = {
   songs: Song[];
   initialVoteCounts: VoteCountMap;
   previousWinnerSong: Song | null;
+  roundId: string;
 };
 
 function getTotalVotes(voteCountMap: VoteCountMap): number {
@@ -25,9 +28,38 @@ function getVotePercentage(votes: number, totalVotes: number): number {
   return Math.round((votes / totalVotes) * 100);
 }
 
-export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong }: VotingScreenProps) {
+export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, roundId }: VotingScreenProps) {
   const [votedSongId, setVotedSongId] = useState<string | null>(null);
   const [voteCounts, setVoteCounts] = useState<VoteCountMap>(initialVoteCounts);
+  const [isSubmittingVote, setIsSubmittingVote] = useState(false);
+
+  useEffect(() => {
+    let unsubscribeVotes: (() => void) | undefined;
+
+    ensureAnonymousAuth()
+      .then((user) => {
+        unsubscribeVotes = subscribeToRoundVotes(roundId, (votes) => {
+          const nextVoteCounts = votes.reduce<VoteCountMap>((voteMap, vote) => {
+            voteMap[vote.songId] = (voteMap[vote.songId] ?? 0) + 1;
+            return voteMap;
+          }, {});
+
+          setVoteCounts(nextVoteCounts);
+
+          const userVote = votes.find((vote) => vote.voterId === user.uid);
+          setVotedSongId(userVote?.songId ?? null);
+        });
+      })
+      .catch((error) => {
+        console.error("Anonymous auth failed:", error);
+      });
+
+    return () => {
+      if (unsubscribeVotes) {
+        unsubscribeVotes();
+      }
+    };
+  }, [roundId]);
 
   const votedSong = useMemo(
     () => songs.find((song) => song.id === votedSongId) ?? null,
@@ -36,16 +68,32 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong }: V
 
   const totalVotes = useMemo(() => getTotalVotes(voteCounts), [voteCounts]);
 
-  function handleVote(songId: string) {
-    if (votedSongId !== null) {
+  async function handleVote(songId: string) {
+    if (votedSongId !== null || isSubmittingVote) {
       return;
     }
 
-    setVotedSongId(songId);
-    setVoteCounts((currentCounts) => ({
-      ...currentCounts,
-      [songId]: (currentCounts[songId] ?? 0) + 1,
-    }));
+    setIsSubmittingVote(true);
+
+    try {
+      const user = await ensureAnonymousAuth();
+
+      await saveVoteToFirestore({
+        roundId,
+        songId,
+        voterId: user.uid,
+      });
+
+      setVotedSongId(songId);
+      setVoteCounts((currentCounts) => ({
+        ...currentCounts,
+        [songId]: (currentCounts[songId] ?? 0) + 1,
+      }));
+    } catch (error) {
+      console.error("Vote save failed:", error);
+    } finally {
+      setIsSubmittingVote(false);
+    }
   }
 
   return (
@@ -110,7 +158,7 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong }: V
               <button
                 type="button"
                 onClick={() => handleVote(song.id)}
-                disabled={votedSongId !== null}
+                disabled={votedSongId !== null || isSubmittingVote}
                 className="mt-3 w-full rounded-lg bg-gradient-to-r from-fuchsia-500 to-cyan-400 px-3 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Głosuj
