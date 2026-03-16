@@ -2,7 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ensureAnonymousAuth } from "@/lib/auth";
+import { saveVoteToFirestore, subscribeToRoundVotes } from "@/lib/firestore";
 import { Song } from "@/lib/types";
 
 type VoteCountMap = Record<string, number>;
@@ -11,6 +13,7 @@ type VotingScreenProps = {
   songs: Song[];
   initialVoteCounts: VoteCountMap;
   previousWinnerSong: Song | null;
+  roundId: string;
 };
 
 function getTotalVotes(voteCountMap: VoteCountMap): number {
@@ -25,27 +28,75 @@ function getVotePercentage(votes: number, totalVotes: number): number {
   return Math.round((votes / totalVotes) * 100);
 }
 
-export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong }: VotingScreenProps) {
+export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, roundId }: VotingScreenProps) {
   const [votedSongId, setVotedSongId] = useState<string | null>(null);
   const [voteCounts, setVoteCounts] = useState<VoteCountMap>(initialVoteCounts);
+  const [isSubmittingVote, setIsSubmittingVote] = useState(false);
+  const [backgroundSoundEnabled, setBackgroundSoundEnabled] = useState(false);
+
+  const songsForVoting = songs;
+
+  useEffect(() => {
+    let unsubscribeVotes: (() => void) | undefined;
+
+    ensureAnonymousAuth()
+      .then((user) => {
+        unsubscribeVotes = subscribeToRoundVotes(roundId, (votes) => {
+          const nextVoteCounts = votes.reduce<VoteCountMap>((voteMap, vote) => {
+            voteMap[vote.songId] = (voteMap[vote.songId] ?? 0) + 1;
+            return voteMap;
+          }, {});
+
+          setVoteCounts(nextVoteCounts);
+
+          const userVote = votes.find((vote) => vote.voterId === user.uid);
+          setVotedSongId(userVote?.songId ?? null);
+        });
+      })
+      .catch((error) => {
+        console.error("Anonymous auth failed:", error);
+      });
+
+    return () => {
+      if (unsubscribeVotes) {
+        unsubscribeVotes();
+      }
+    };
+  }, [roundId]);
 
   const votedSong = useMemo(
-    () => songs.find((song) => song.id === votedSongId) ?? null,
-    [songs, votedSongId],
+    () => songsForVoting.find((song) => song.id === votedSongId) ?? null,
+    [songsForVoting, votedSongId],
   );
 
   const totalVotes = useMemo(() => getTotalVotes(voteCounts), [voteCounts]);
 
-  function handleVote(songId: string) {
-    if (votedSongId !== null) {
+  async function handleVote(songId: string) {
+    if (votedSongId !== null || isSubmittingVote) {
       return;
     }
 
-    setVotedSongId(songId);
-    setVoteCounts((currentCounts) => ({
-      ...currentCounts,
-      [songId]: (currentCounts[songId] ?? 0) + 1,
-    }));
+    setIsSubmittingVote(true);
+
+    try {
+      const user = await ensureAnonymousAuth();
+
+      await saveVoteToFirestore({
+        roundId,
+        songId,
+        voterId: user.uid,
+      });
+
+      setVotedSongId(songId);
+      setVoteCounts((currentCounts) => ({
+        ...currentCounts,
+        [songId]: (currentCounts[songId] ?? 0) + 1,
+      }));
+    } catch (error) {
+      console.error("Vote save failed:", error);
+    } finally {
+      setIsSubmittingVote(false);
+    }
   }
 
   return (
@@ -57,9 +108,9 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong }: V
         <div className="pointer-events-none absolute inset-0 -z-30 overflow-hidden rounded-3xl opacity-20">
           <iframe
             title="Poprzednio wybrany utwór"
-            src={`https://www.youtube.com/embed/${previousWinnerSong.youtubeId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${previousWinnerSong.youtubeId}`}
+            src={`https://www.youtube.com/embed/${previousWinnerSong.youtubeId}?autoplay=1&mute=${backgroundSoundEnabled ? 0 : 1}&controls=1&loop=1&playlist=${previousWinnerSong.youtubeId}&rel=0`}
             className="h-full w-full"
-            allow="autoplay"
+            allow="autoplay; encrypted-media"
           />
         </div>
       ) : null}
@@ -77,12 +128,21 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong }: V
           </Link>
         </div>
         {previousWinnerSong ? (
-          <p className="mt-3 text-xs text-fuchsia-200">W tle gra poprzedni zwycięzca: {previousWinnerSong.title}</p>
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-fuchsia-200">W tle odtwarzany jest utwór: {previousWinnerSong.title}</p>
+            <button
+              type="button"
+              onClick={() => setBackgroundSoundEnabled((enabled) => !enabled)}
+              className="rounded-full border border-white/30 bg-white/10 px-3 py-1 text-xs text-white"
+            >
+              {backgroundSoundEnabled ? "Wycisz tło" : "Włącz dźwięk w tle"}
+            </button>
+          </div>
         ) : null}
       </header>
 
       <ul className="grid gap-4 sm:grid-cols-3">
-        {songs.map((song) => {
+        {songsForVoting.map((song) => {
           const votes = voteCounts[song.id] ?? 0;
           const percentage = getVotePercentage(votes, totalVotes);
 
@@ -110,7 +170,7 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong }: V
               <button
                 type="button"
                 onClick={() => handleVote(song.id)}
-                disabled={votedSongId !== null}
+                disabled={votedSongId !== null || isSubmittingVote}
                 className="mt-3 w-full rounded-lg bg-gradient-to-r from-fuchsia-500 to-cyan-400 px-3 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Głosuj
