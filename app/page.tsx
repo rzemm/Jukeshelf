@@ -4,7 +4,7 @@ export default function Home() {
   return (
     <main>
       <h1>JukeShelf 🎵</h1>
-      <p>Moja pierwsza aplikacja muzyczna</p>
+      <p>Moja pierwsz  a aplikacja muzyczna</p>
     </main>
   );
 }
