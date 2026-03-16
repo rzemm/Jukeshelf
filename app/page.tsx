@@ -1,10 +1,10 @@
-import Image from "next/image";
+import { VotingScreen } from "@/components/voting-screen";
+import { activeRoundSongs, activeRoundVotes, previousWinnerSong } from "@/lib/round";
 
 export default function Home() {
   return (
     <main>
-      <h1>JukeShelf 🎵</h1>
-      <p>Moja pierwsz  a aplikacja muzyczna</p>
+      <VotingScreen songs={activeRoundSongs} initialVoteCounts={activeRoundVotes} previousWinnerSong={previousWinnerSong} />
     </main>
   );
 }
