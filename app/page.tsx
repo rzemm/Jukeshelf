@@ -1,17 +1,39 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { VotingScreen } from "@/components/voting-screen";
-import { activeRoundSongs, activeRoundVotes, previousWinnerSong } from "@/lib/round";
-import { songs } from "@/lib/songs";
+import { subscribeToActiveRound } from "@/lib/firestore";
+import { ActiveRound } from "@/lib/types";
 
 export default function Home() {
-  const songsForVoting = activeRoundSongs.length > 0 ? activeRoundSongs : songs.slice(0, 3);
+  const [activeRound, setActiveRound] = useState<ActiveRound | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToActiveRound((round) => {
+      setActiveRound(round);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  if (!activeRound || !activeRound.isActive || activeRound.songs.length === 0) {
+    return (
+      <main className="mx-auto max-w-4xl px-4 py-12 text-center text-zinc-100">
+        <h1 className="text-2xl font-semibold">Brak aktywnego głosowania</h1>
+        <p className="mt-2 text-sm text-zinc-300">Wejdź na panel admina i kliknij „Rozpocznij”, aby uruchomić nową rundę.</p>
+      </main>
+    );
+  }
 
   return (
     <main>
       <VotingScreen
-        songs={songsForVoting}
-        initialVoteCounts={activeRoundVotes}
-        previousWinnerSong={previousWinnerSong}
-        roundId="round-1"
+        songs={activeRound.songs}
+        initialVoteCounts={{}}
+        previousWinnerSong={null}
+        roundId={activeRound.id}
       />
     </main>
   );

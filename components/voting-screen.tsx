@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ensureAnonymousAuth } from "@/lib/auth";
-import { fetchSongsFromFirestore, saveVoteToFirestore, subscribeToRoundVotes } from "@/lib/firestore";
+import { saveVoteToFirestore, subscribeToRoundVotes } from "@/lib/firestore";
 import { Song } from "@/lib/types";
 
 type VoteCountMap = Record<string, number>;
@@ -29,7 +29,6 @@ function getVotePercentage(votes: number, totalVotes: number): number {
 }
 
 export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, roundId }: VotingScreenProps) {
-  const [songsForVoting, setSongsForVoting] = useState<Song[]>(songs);
   const [votedSongId, setVotedSongId] = useState<string | null>(null);
   const [voteCounts, setVoteCounts] = useState<VoteCountMap>(initialVoteCounts);
   const [isSubmittingVote, setIsSubmittingVote] = useState(false);
@@ -61,24 +60,6 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
       }
     };
   }, [roundId]);
-
-  useEffect(() => {
-    fetchSongsFromFirestore()
-      .then((firestoreSongs) => {
-        if (firestoreSongs.length > 0) {
-          setSongsForVoting(firestoreSongs.slice(0, 3));
-        }
-      })
-      .catch((error) => {
-        console.error("Songs fetch failed:", error);
-      });
-  }, []);
-
-  useEffect(() => {
-    ensureAnonymousAuth().catch((error) => {
-      console.error("Anonymous auth failed:", error);
-    });
-  }, []);
 
   const votedSong = useMemo(
     () => songsForVoting.find((song) => song.id === votedSongId) ?? null,
