@@ -11,6 +11,7 @@ export default function Home() {
         songs={songsForVoting}
         initialVoteCounts={activeRoundVotes}
         previousWinnerSong={previousWinnerSong}
+        roundId="round-1"
       />
     </main>
   );
