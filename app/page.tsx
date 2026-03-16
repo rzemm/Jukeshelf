@@ -1,10 +1,12 @@
-import Image from "next/image";
+import { VotingScreen } from "@/components/voting-screen";
+import { drawRandomSongs, songs } from "@/lib/songs";
 
 export default function Home() {
+  const activeSongs = drawRandomSongs(songs, 3);
+
   return (
     <main>
-      <h1>JukeShelf 🎵</h1>
-      <p>Moja pierwsz  a aplikacja muzyczna</p>
+      <VotingScreen songs={activeSongs} />
     </main>
   );
 }
