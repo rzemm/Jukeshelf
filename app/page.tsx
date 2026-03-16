@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { VotingScreen } from "@/components/voting-screen";
-import { subscribeToActiveRound, subscribeToVotingRound } from "@/lib/firestore";
-import { ActiveRound } from "@/lib/types";
+import { subscribeToActiveRound, subscribeToNowPlayingSong, subscribeToVotingRound } from "@/lib/firestore";
+import { ActiveRound, Song } from "@/lib/types";
 
 export default function Home() {
   const searchParams = useSearchParams();
   const roundId = searchParams.get("round");
   const [activeRound, setActiveRound] = useState<ActiveRound | null>(null);
+  const [nowPlayingSong, setNowPlayingSong] = useState<Song | null>(null);
 
   useEffect(() => {
     const unsubscribe = roundId
@@ -26,6 +27,16 @@ export default function Home() {
     };
   }, [roundId]);
 
+  useEffect(() => {
+    const unsubscribeNowPlaying = subscribeToNowPlayingSong((song) => {
+      setNowPlayingSong(song);
+    });
+
+    return () => {
+      unsubscribeNowPlaying();
+    };
+  }, []);
+
   if (!activeRound || !activeRound.isActive || activeRound.songs.length === 0) {
     return (
       <main className="mx-auto max-w-4xl px-4 py-12 text-center text-zinc-100">
@@ -37,6 +48,7 @@ export default function Home() {
         >
           Przejdź do panelu admina
         </Link>
+        {nowPlayingSong ? <p className="mt-4 text-xs text-emerald-200">Teraz gra: {nowPlayingSong.title}</p> : null}
       </main>
     );
   }
@@ -46,7 +58,7 @@ export default function Home() {
       <VotingScreen
         songs={activeRound.songs}
         initialVoteCounts={{}}
-        previousWinnerSong={activeRound.songs[0] ?? null}
+        previousWinnerSong={nowPlayingSong}
         roundId={activeRound.id}
       />
     </main>

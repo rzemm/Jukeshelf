@@ -32,6 +32,7 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
   const [votedSongId, setVotedSongId] = useState<string | null>(null);
   const [voteCounts, setVoteCounts] = useState<VoteCountMap>(initialVoteCounts);
   const [isSubmittingVote, setIsSubmittingVote] = useState(false);
+  const [backgroundSoundEnabled, setBackgroundSoundEnabled] = useState(false);
 
   const songsForVoting = songs;
 
@@ -107,7 +108,7 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
         <div className="pointer-events-none absolute inset-0 -z-30 overflow-hidden rounded-3xl opacity-20">
           <iframe
             title="Poprzednio wybrany utwór"
-            src={`https://www.youtube.com/embed/${previousWinnerSong.youtubeId}?autoplay=1&controls=1&loop=1&playlist=${previousWinnerSong.youtubeId}`}
+            src={`https://www.youtube.com/embed/${previousWinnerSong.youtubeId}?autoplay=1&mute=${backgroundSoundEnabled ? 0 : 1}&controls=1&loop=1&playlist=${previousWinnerSong.youtubeId}&rel=0`}
             className="h-full w-full"
             allow="autoplay; encrypted-media"
           />
@@ -127,7 +128,16 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
           </Link>
         </div>
         {previousWinnerSong ? (
-          <p className="mt-3 text-xs text-fuchsia-200">W tle odtwarzany jest utwór: {previousWinnerSong.title}</p>
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-fuchsia-200">W tle odtwarzany jest utwór: {previousWinnerSong.title}</p>
+            <button
+              type="button"
+              onClick={() => setBackgroundSoundEnabled((enabled) => !enabled)}
+              className="rounded-full border border-white/30 bg-white/10 px-3 py-1 text-xs text-white"
+            >
+              {backgroundSoundEnabled ? "Wycisz tło" : "Włącz dźwięk w tle"}
+            </button>
+          </div>
         ) : null}
       </header>
 

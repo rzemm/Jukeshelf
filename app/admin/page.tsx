@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { addSongToPlaylist, createPlaylist, fetchPlaylistSongs, fetchPlaylists, startRoundFromPlaylist } from "@/lib/firestore";
+import {
+  addSongToPlaylist,
+  createPlaylist,
+  endVotingAndPlayWinner,
+  fetchPlaylistSongs,
+  fetchPlaylists,
+  getActiveRound,
+  startRoundFromPlaylist,
+} from "@/lib/firestore";
 import { createSong, getYoutubeIdFromUrl } from "@/lib/songs";
 import { Playlist, Song } from "@/lib/types";
 
@@ -14,6 +22,8 @@ export default function AdminPage() {
   const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
   const [songTitleInput, setSongTitleInput] = useState("");
   const [votingLink, setVotingLink] = useState<string | null>(null);
+  const [activeRoundId, setActiveRoundId] = useState<string | null>(null);
+  const [nowPlayingSongTitle, setNowPlayingSongTitle] = useState<string | null>(null);
   const [formMessage, setFormMessage] = useState<string | null>(null);
 
   const selectedPlaylist = useMemo(
@@ -33,6 +43,17 @@ export default function AdminPage() {
       .catch((error) => {
         console.error("Playlists fetch failed:", error);
         setFormMessage("Nie udało się pobrać playlist.");
+      });
+
+    getActiveRound()
+      .then((round) => {
+        if (round?.isActive) {
+          setActiveRoundId(round.id);
+          setVotingLink(`${window.location.origin}/?round=${round.id}`);
+        }
+      })
+      .catch((error) => {
+        console.error("Active round fetch failed:", error);
       });
   }, []);
 
@@ -114,11 +135,30 @@ export default function AdminPage() {
     try {
       const round = await startRoundFromPlaylist(selectedPlaylistId);
       const nextVotingLink = `${window.location.origin}/?round=${round.id}`;
+      setActiveRoundId(round.id);
       setVotingLink(nextVotingLink);
       setFormMessage("Rozpoczęto rundę głosowania. Link jest gotowy.");
     } catch (error) {
       console.error("Start round failed:", error);
       setFormMessage("Ta playlista musi mieć minimum 3 utwory, aby rozpocząć.");
+    }
+  }
+
+  async function handleEndVoting() {
+    if (!activeRoundId) {
+      setFormMessage("Brak aktywnej rundy do zakończenia.");
+      return;
+    }
+
+    try {
+      const winnerSong = await endVotingAndPlayWinner(activeRoundId);
+      setNowPlayingSongTitle(winnerSong.title);
+      setActiveRoundId(null);
+      setVotingLink(null);
+      setFormMessage(`Zakończono głosowanie. Teraz gra: ${winnerSong.title}`);
+    } catch (error) {
+      console.error("End voting failed:", error);
+      setFormMessage("Nie udało się zakończyć głosowania.");
     }
   }
 
@@ -140,7 +180,19 @@ export default function AdminPage() {
           >
             Rozpocznij
           </button>
+          <button
+            type="button"
+            onClick={handleEndVoting}
+            disabled={!activeRoundId}
+            className="rounded-full border border-emerald-300/40 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:opacity-60"
+          >
+            Zakończ głosowanie i puść nową piosenkę
+          </button>
         </div>
+
+        {nowPlayingSongTitle ? (
+          <p className="mt-3 text-xs text-emerald-100">Teraz gra: {nowPlayingSongTitle}</p>
+        ) : null}
 
         {votingLink ? (
           <div className="mt-4 rounded-xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
