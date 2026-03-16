@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addSongToPlaylist,
   createPlaylist,
@@ -10,9 +10,20 @@ import {
   fetchPlaylists,
   getActiveRound,
   startRoundFromPlaylist,
+  subscribeToNowPlayingSong,
+  subscribeToRoundVotes,
+  subscribeToVotingRound,
 } from "@/lib/firestore";
 import { createSong, getYoutubeIdFromUrl } from "@/lib/songs";
-import { Playlist, Song } from "@/lib/types";
+import { Playlist, Song, Vote } from "@/lib/types";
+
+import { loadYouTubeApi } from "@/lib/youtube";
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
 
 export default function AdminPage() {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -23,8 +34,17 @@ export default function AdminPage() {
   const [songTitleInput, setSongTitleInput] = useState("");
   const [votingLink, setVotingLink] = useState<string | null>(null);
   const [activeRoundId, setActiveRoundId] = useState<string | null>(null);
-  const [nowPlayingSongTitle, setNowPlayingSongTitle] = useState<string | null>(null);
   const [formMessage, setFormMessage] = useState<string | null>(null);
+
+  const [nowPlayingSong, setNowPlayingSong] = useState<Song | null>(null);
+  const [roundSongs, setRoundSongs] = useState<Song[]>([]);
+  const [roundVotes, setRoundVotes] = useState<Vote[]>([]);
+  const [playerEnabled, setPlayerEnabled] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const activePlayerRef = useRef<any>(null);
+  const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const selectedPlaylist = useMemo(
     () => playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null,
@@ -35,7 +55,6 @@ export default function AdminPage() {
     fetchPlaylists()
       .then((loadedPlaylists) => {
         setPlaylists(loadedPlaylists);
-
         if (loadedPlaylists.length > 0) {
           setSelectedPlaylistId((currentSelectedId) => currentSelectedId || loadedPlaylists[0].id);
         }
@@ -58,36 +77,105 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedPlaylistId) {
+    return subscribeToNowPlayingSong(setNowPlayingSong);
+  }, []);
+
+  useEffect(() => {
+    if (!activeRoundId) {
+      setRoundSongs([]);
       return;
     }
+    return subscribeToVotingRound(activeRoundId, (round) => {
+      setRoundSongs(round?.songs ?? []);
+    });
+  }, [activeRoundId]);
 
+  useEffect(() => {
+    if (!activeRoundId) {
+      setRoundVotes([]);
+      return;
+    }
+    return subscribeToRoundVotes(activeRoundId, setRoundVotes);
+  }, [activeRoundId]);
+
+  useEffect(() => {
+    if (!selectedPlaylistId) return;
     fetchPlaylistSongs(selectedPlaylistId)
-      .then((songs) => {
-        setPlaylistSongs(songs);
-      })
+      .then(setPlaylistSongs)
       .catch((error) => {
         console.error("Playlist songs fetch failed:", error);
         setFormMessage("Nie udało się pobrać utworów playlisty.");
       });
   }, [selectedPlaylistId]);
 
+  useEffect(() => {
+    const cleanup = () => {
+      if (activeTimerRef.current) {
+        clearInterval(activeTimerRef.current);
+        activeTimerRef.current = null;
+      }
+      if (activePlayerRef.current) {
+        activePlayerRef.current.destroy();
+        activePlayerRef.current = null;
+      }
+      if (wrapperRef.current) {
+        wrapperRef.current.innerHTML = "";
+      }
+      setTimeRemaining(null);
+    };
+
+    if (!playerEnabled || !nowPlayingSong) {
+      cleanup();
+      return;
+    }
+
+    const videoId = nowPlayingSong.youtubeId;
+    let isCurrent = true;
+
+    loadYouTubeApi().then(() => {
+      if (!isCurrent || !wrapperRef.current) return;
+
+      cleanup();
+
+      const container = document.createElement("div");
+      wrapperRef.current.appendChild(container);
+
+      const player = new window.YT.Player(container, {
+        videoId,
+        playerVars: { autoplay: 1, controls: 1, rel: 0 },
+        events: {
+          onReady: () => {
+            if (!isCurrent) return;
+            activeTimerRef.current = setInterval(() => {
+              const duration = player.getDuration();
+              const current = player.getCurrentTime();
+              if (duration > 0) {
+                setTimeRemaining(Math.max(0, Math.round(duration - current)));
+              }
+            }, 1000);
+          },
+        },
+      });
+
+      activePlayerRef.current = player;
+    });
+
+    return () => {
+      isCurrent = false;
+      cleanup();
+    };
+  }, [playerEnabled, nowPlayingSong?.youtubeId]);
+
   async function handleCreatePlaylist() {
     const playlistName = playlistNameInput.trim();
-
     if (!playlistName) {
       setFormMessage("Podaj nazwę playlisty.");
       return;
     }
-
     try {
       const playlistId = await createPlaylist(playlistName);
-      const nextPlaylist: Playlist = {
-        id: playlistId,
-        name: playlistName,
-      };
-
-      setPlaylists((currentPlaylists) => [...currentPlaylists, nextPlaylist]);
+      const nextPlaylist: Playlist = { id: playlistId, name: playlistName };
+      setPlaylists((current) => [...current, nextPlaylist]);
       setSelectedPlaylistId(playlistId);
       setPlaylistNameInput("");
       setFormMessage("Utworzono nową playlistę.");
@@ -102,21 +190,17 @@ export default function AdminPage() {
       setFormMessage("Najpierw utwórz lub wybierz playlistę.");
       return;
     }
-
     const youtubeId = getYoutubeIdFromUrl(youtubeUrlInput.trim());
-
     if (!youtubeId) {
       setFormMessage("Nieprawidłowy link YouTube. Wklej pełny URL z YouTube.");
       return;
     }
-
     const songId = `song-${Date.now()}`;
     const songTitle = songTitleInput.trim() || `Nowy utwór (${youtubeId})`;
     const newSong = createSong(songId, songTitle, youtubeUrlInput.trim());
-
     try {
       await addSongToPlaylist(selectedPlaylistId, newSong);
-      setPlaylistSongs((currentSongs) => [...currentSongs, newSong]);
+      setPlaylistSongs((current) => [...current, newSong]);
       setYoutubeUrlInput("");
       setSongTitleInput("");
       setFormMessage("Dodano utwór do playlisty i zapisano w bazie.");
@@ -131,7 +215,6 @@ export default function AdminPage() {
       setFormMessage("Wybierz playlistę, aby rozpocząć głosowanie.");
       return;
     }
-
     try {
       const round = await startRoundFromPlaylist(selectedPlaylistId);
       const nextVotingLink = `${window.location.origin}/?round=${round.id}`;
@@ -149,10 +232,8 @@ export default function AdminPage() {
       setFormMessage("Brak aktywnej rundy do zakończenia.");
       return;
     }
-
     try {
       const winnerSong = await endVotingAndPlayWinner(activeRoundId);
-      setNowPlayingSongTitle(winnerSong.title);
       setActiveRoundId(null);
       setVotingLink(null);
       setFormMessage(`Zakończono głosowanie. Teraz gra: ${winnerSong.title}`);
@@ -161,6 +242,17 @@ export default function AdminPage() {
       setFormMessage("Nie udało się zakończyć głosowania.");
     }
   }
+
+  const voteCounts = useMemo(
+    () =>
+      roundVotes.reduce<Record<string, number>>((acc, vote) => {
+        acc[vote.songId] = (acc[vote.songId] ?? 0) + 1;
+        return acc;
+      }, {}),
+    [roundVotes],
+  );
+
+  const totalVotes = roundVotes.length;
 
   return (
     <main className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6">
@@ -190,8 +282,8 @@ export default function AdminPage() {
           </button>
         </div>
 
-        {nowPlayingSongTitle ? (
-          <p className="mt-3 text-xs text-emerald-100">Teraz gra: {nowPlayingSongTitle}</p>
+        {nowPlayingSong ? (
+          <p className="mt-3 text-xs text-emerald-100">Teraz gra: {nowPlayingSong.title}</p>
         ) : null}
 
         {votingLink ? (
@@ -203,6 +295,68 @@ export default function AdminPage() {
           </div>
         ) : null}
       </header>
+
+      {nowPlayingSong ? (
+        <section className="rounded-3xl border border-emerald-300/30 bg-[#181034]/85 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Teraz gra</h2>
+              <p className="mt-1 text-sm text-emerald-100">{nowPlayingSong.title}</p>
+              {timeRemaining !== null ? (
+                <p className="mt-1 text-xs text-zinc-300">
+                  Pozostało:{" "}
+                  <strong className={timeRemaining < 60 ? "text-red-400" : "text-white"}>
+                    {formatTime(timeRemaining)}
+                  </strong>
+                </p>
+              ) : playerEnabled ? (
+                <p className="mt-1 text-xs text-zinc-400">Ładowanie odtwarzacza…</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => setPlayerEnabled((v) => !v)}
+              className="shrink-0 rounded-full border border-emerald-300/40 bg-emerald-500/20 px-3 py-1 text-xs text-white transition hover:brightness-110"
+            >
+              {playerEnabled ? "Wyłącz odtwarzacz" : "Włącz odtwarzacz"}
+            </button>
+          </div>
+
+          <div
+            ref={wrapperRef}
+            className={`mt-4 w-full overflow-hidden rounded-xl ${playerEnabled ? "aspect-video" : "hidden"}`}
+          />
+        </section>
+      ) : null}
+
+      {activeRoundId && roundSongs.length > 0 ? (
+        <section className="rounded-3xl border border-fuchsia-300/30 bg-[#181034]/85 p-5">
+          <h2 className="text-lg font-semibold text-white">Bieżące głosowanie</h2>
+          <p className="mt-1 text-xs text-zinc-400">Łącznie głosów: {totalVotes}</p>
+          <ul className="mt-4 space-y-3">
+            {roundSongs.map((song) => {
+              const votes = voteCounts[song.id] ?? 0;
+              const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
+              return (
+                <li key={song.id}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-white">{song.title}</span>
+                    <span className="text-fuchsia-200">
+                      {votes} głos{votes === 1 ? "" : votes >= 2 && votes <= 4 ? "y" : "ów"} ({percentage}%)
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 rounded-full bg-white/10">
+                    <div
+                      className="h-2 rounded-full bg-gradient-to-r from-fuchsia-500 to-cyan-400 transition-all duration-500"
+                      style={{ width: `${percentage}%` }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="rounded-3xl border border-cyan-300/30 bg-[#181034]/85 p-5">
         <h2 className="text-lg font-semibold text-white">Utwórz nową playlistę</h2>

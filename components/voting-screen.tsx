@@ -2,17 +2,19 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ensureAnonymousAuth } from "@/lib/auth";
 import { saveVoteToFirestore, subscribeToRoundVotes } from "@/lib/firestore";
 import { Song } from "@/lib/types";
+import { loadYouTubeApi } from "@/lib/youtube";
 
 type VoteCountMap = Record<string, number>;
 
 type VotingScreenProps = {
   songs: Song[];
   initialVoteCounts: VoteCountMap;
-  previousWinnerSong: Song | null;
+  nowPlayingSong: Song | null;
+  nowPlayingStartedAtMs: number | null;
   roundId: string;
 };
 
@@ -28,13 +30,14 @@ function getVotePercentage(votes: number, totalVotes: number): number {
   return Math.round((votes / totalVotes) * 100);
 }
 
-export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, roundId }: VotingScreenProps) {
+export function VotingScreen({ songs, initialVoteCounts, nowPlayingSong, nowPlayingStartedAtMs, roundId }: VotingScreenProps) {
   const [votedSongId, setVotedSongId] = useState<string | null>(null);
   const [voteCounts, setVoteCounts] = useState<VoteCountMap>(initialVoteCounts);
   const [isSubmittingVote, setIsSubmittingVote] = useState(false);
   const [backgroundSoundEnabled, setBackgroundSoundEnabled] = useState(false);
 
-  const songsForVoting = songs;
+  const bgWrapperRef = useRef<HTMLDivElement>(null);
+  const bgPlayerRef = useRef<any>(null);
 
   useEffect(() => {
     let unsubscribeVotes: (() => void) | undefined;
@@ -64,9 +67,81 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
     };
   }, [roundId]);
 
+  useEffect(() => {
+    const cleanup = () => {
+      if (bgPlayerRef.current) {
+        bgPlayerRef.current.destroy();
+        bgPlayerRef.current = null;
+      }
+      if (bgWrapperRef.current) {
+        bgWrapperRef.current.innerHTML = "";
+      }
+    };
+
+    if (!nowPlayingSong) {
+      cleanup();
+      return;
+    }
+
+    const videoId = nowPlayingSong.youtubeId;
+    const startedAtMs = nowPlayingStartedAtMs;
+    let isCurrent = true;
+
+    loadYouTubeApi().then(() => {
+      if (!isCurrent || !bgWrapperRef.current) return;
+
+      cleanup();
+
+      const container = document.createElement("div");
+      bgWrapperRef.current.appendChild(container);
+
+      bgPlayerRef.current = new window.YT.Player(container, {
+        videoId,
+        playerVars: { autoplay: 1, mute: 1, controls: 0, rel: 0 },
+        events: {
+          onReady: () => {
+            const player = bgPlayerRef.current;
+            if (!isCurrent || !player) return;
+
+            if (startedAtMs) {
+              const elapsed = (Date.now() - startedAtMs) / 1000;
+              const duration = player.getDuration();
+              if (duration > 0) {
+                player.seekTo(elapsed % duration, true);
+              }
+            }
+
+            player.playVideo();
+          },
+          onStateChange: (event: { data: number }) => {
+            // 0 = ended — loop manually so it restarts from 0, not from the original offset
+            if (event.data === 0 && bgPlayerRef.current) {
+              bgPlayerRef.current.seekTo(0, true);
+              bgPlayerRef.current.playVideo();
+            }
+          },
+        },
+      });
+    });
+
+    return () => {
+      isCurrent = false;
+      cleanup();
+    };
+  }, [nowPlayingSong?.youtubeId, nowPlayingStartedAtMs]);
+
+  useEffect(() => {
+    if (!bgPlayerRef.current) return;
+    if (backgroundSoundEnabled) {
+      bgPlayerRef.current.unMute();
+    } else {
+      bgPlayerRef.current.mute();
+    }
+  }, [backgroundSoundEnabled]);
+
   const votedSong = useMemo(
-    () => songsForVoting.find((song) => song.id === votedSongId) ?? null,
-    [songsForVoting, votedSongId],
+    () => songs.find((song) => song.id === votedSongId) ?? null,
+    [songs, votedSongId],
   );
 
   const totalVotes = useMemo(() => getTotalVotes(voteCounts), [voteCounts]);
@@ -104,16 +179,8 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
       <div className="absolute inset-x-6 top-5 -z-20 h-64 rounded-full bg-fuchsia-500/30 blur-3xl" />
       <div className="absolute inset-x-20 top-28 -z-20 h-56 rounded-full bg-cyan-400/30 blur-3xl" />
 
-      {previousWinnerSong ? (
-        <div className="pointer-events-none absolute inset-0 -z-30 overflow-hidden rounded-3xl opacity-20">
-          <iframe
-            title="Poprzednio wybrany utwór"
-            src={`https://www.youtube.com/embed/${previousWinnerSong.youtubeId}?autoplay=1&mute=${backgroundSoundEnabled ? 0 : 1}&controls=1&loop=1&playlist=${previousWinnerSong.youtubeId}&rel=0`}
-            className="h-full w-full"
-            allow="autoplay; encrypted-media"
-          />
-        </div>
-      ) : null}
+      {/* Hidden background audio player */}
+      <div ref={bgWrapperRef} className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0" />
 
       <header className="mb-6 rounded-3xl border border-fuchsia-300/30 bg-[#1c1238]/80 p-5 text-center shadow-[0_0_30px_rgba(236,72,153,0.25)] backdrop-blur">
         <p className="text-xs uppercase tracking-[0.35em] text-fuchsia-200">SzafaGrająca</p>
@@ -127,9 +194,9 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
             Panel admina
           </Link>
         </div>
-        {previousWinnerSong ? (
+        {nowPlayingSong ? (
           <div className="mt-3 space-y-2">
-            <p className="text-xs text-fuchsia-200">W tle odtwarzany jest utwór: {previousWinnerSong.title}</p>
+            <p className="text-xs text-fuchsia-200">W tle leci: {nowPlayingSong.title}</p>
             <button
               type="button"
               onClick={() => setBackgroundSoundEnabled((enabled) => !enabled)}
@@ -142,7 +209,7 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
       </header>
 
       <ul className="grid gap-4 sm:grid-cols-3">
-        {songsForVoting.map((song) => {
+        {songs.map((song) => {
           const votes = voteCounts[song.id] ?? 0;
           const percentage = getVotePercentage(votes, totalVotes);
 

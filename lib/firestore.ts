@@ -124,10 +124,32 @@ export async function startRoundFromPlaylist(playlistId: string) {
     startedAt: serverTimestamp(),
   });
 
-  await setDoc(doc(db, ACTIVE_ROUNDS_COLLECTION, ACTIVE_ROUND_DOC_ID), {
-    roundId,
-    updatedAt: serverTimestamp(),
-  });
+  const activeSnapshot = await getDoc(doc(db, ACTIVE_ROUNDS_COLLECTION, ACTIVE_ROUND_DOC_ID));
+  const hasNowPlaying = activeSnapshot.exists() && activeSnapshot.data().nowPlayingSong;
+
+  if (hasNowPlaying) {
+    await setDoc(
+      doc(db, ACTIVE_ROUNDS_COLLECTION, ACTIVE_ROUND_DOC_ID),
+      { roundId, updatedAt: serverTimestamp() },
+      { merge: true },
+    );
+  } else {
+    const nonVotingSongs = playlistSongs.filter((s) => !selectedSongs.find((vs) => vs.id === s.id));
+    const autoSong = nonVotingSongs.length > 0
+      ? nonVotingSongs[Math.floor(Math.random() * nonVotingSongs.length)]
+      : selectedSongs[0];
+
+    await setDoc(
+      doc(db, ACTIVE_ROUNDS_COLLECTION, ACTIVE_ROUND_DOC_ID),
+      {
+        roundId,
+        nowPlayingSong: autoSong,
+        nowPlayingStartedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
 
   return {
     id: roundId,
@@ -239,6 +261,7 @@ export async function endVotingAndPlayWinner(roundId: string) {
     {
       roundId: null,
       nowPlayingSong: winner,
+      nowPlayingStartedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     },
     { merge: true },
@@ -256,6 +279,22 @@ export function subscribeToNowPlayingSong(onSongChange: (song: Song | null) => v
 
     const data = snapshot.data();
     onSongChange(normalizeSongOrNull(data.nowPlayingSong));
+  });
+}
+
+export function subscribeToNowPlaying(
+  onChange: (song: Song | null, startedAtMs: number | null) => void,
+) {
+  return onSnapshot(doc(db, ACTIVE_ROUNDS_COLLECTION, ACTIVE_ROUND_DOC_ID), (snapshot) => {
+    if (!snapshot.exists()) {
+      onChange(null, null);
+      return;
+    }
+
+    const data = snapshot.data();
+    const song = normalizeSongOrNull(data.nowPlayingSong);
+    const startedAtMs = data.nowPlayingStartedAt?.toMillis?.() ?? null;
+    onChange(song, startedAtMs);
   });
 }
 
