@@ -33,6 +33,8 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
   const [voteCounts, setVoteCounts] = useState<VoteCountMap>(initialVoteCounts);
   const [isSubmittingVote, setIsSubmittingVote] = useState(false);
 
+  const songsForVoting = songs;
+
   useEffect(() => {
     let unsubscribeVotes: (() => void) | undefined;
 
