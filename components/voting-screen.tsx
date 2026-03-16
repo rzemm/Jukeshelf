@@ -105,9 +105,9 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
         <div className="pointer-events-none absolute inset-0 -z-30 overflow-hidden rounded-3xl opacity-20">
           <iframe
             title="Poprzednio wybrany utwór"
-            src={`https://www.youtube.com/embed/${previousWinnerSong.youtubeId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${previousWinnerSong.youtubeId}`}
+            src={`https://www.youtube.com/embed/${previousWinnerSong.youtubeId}?autoplay=1&controls=1&loop=1&playlist=${previousWinnerSong.youtubeId}`}
             className="h-full w-full"
-            allow="autoplay"
+            allow="autoplay; encrypted-media"
           />
         </div>
       ) : null}
@@ -125,7 +125,7 @@ export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong, rou
           </Link>
         </div>
         {previousWinnerSong ? (
-          <p className="mt-3 text-xs text-fuchsia-200">W tle gra poprzedni zwycięzca: {previousWinnerSong.title}</p>
+          <p className="mt-3 text-xs text-fuchsia-200">W tle odtwarzany jest utwór: {previousWinnerSong.title}</p>
         ) : null}
       </header>
 

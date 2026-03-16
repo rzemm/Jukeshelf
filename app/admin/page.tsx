@@ -13,6 +13,7 @@ export default function AdminPage() {
   const [playlistNameInput, setPlaylistNameInput] = useState("");
   const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
   const [songTitleInput, setSongTitleInput] = useState("");
+  const [votingLink, setVotingLink] = useState<string | null>(null);
   const [formMessage, setFormMessage] = useState<string | null>(null);
 
   const selectedPlaylist = useMemo(
@@ -111,8 +112,10 @@ export default function AdminPage() {
     }
 
     try {
-      await startRoundFromPlaylist(selectedPlaylistId);
-      setFormMessage("Rozpoczęto rundę głosowania na stronie głównej.");
+      const round = await startRoundFromPlaylist(selectedPlaylistId);
+      const nextVotingLink = `${window.location.origin}/?round=${round.id}`;
+      setVotingLink(nextVotingLink);
+      setFormMessage("Rozpoczęto rundę głosowania. Link jest gotowy.");
     } catch (error) {
       console.error("Start round failed:", error);
       setFormMessage("Ta playlista musi mieć minimum 3 utwory, aby rozpocząć.");
@@ -138,6 +141,15 @@ export default function AdminPage() {
             Rozpocznij
           </button>
         </div>
+
+        {votingLink ? (
+          <div className="mt-4 rounded-xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+            <p className="font-semibold">Link do panelu głosowania:</p>
+            <a href={votingLink} className="mt-1 block break-all underline" target="_blank" rel="noreferrer">
+              {votingLink}
+            </a>
+          </div>
+        ) : null}
       </header>
 
       <section className="rounded-3xl border border-cyan-300/30 bg-[#181034]/85 p-5">
@@ -204,6 +216,16 @@ export default function AdminPage() {
         <p className="mt-4 text-xs text-zinc-300">
           Utwory w playliście {selectedPlaylist ? <strong>{selectedPlaylist.name}</strong> : ""}: {playlistSongs.length}
         </p>
+
+        {playlistSongs.length > 0 ? (
+          <ul className="mt-3 space-y-2 text-sm text-zinc-100">
+            {playlistSongs.map((song) => (
+              <li key={song.id} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                {song.title}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </section>
     </main>
   );

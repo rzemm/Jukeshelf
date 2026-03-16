@@ -16,6 +16,7 @@ const PLAYLISTS_COLLECTION = "playlists";
 const VOTES_COLLECTION = "votes";
 const ACTIVE_ROUNDS_COLLECTION = "activeRounds";
 const ACTIVE_ROUND_DOC_ID = "current";
+const VOTING_ROUNDS_COLLECTION = "votingRounds";
 
 function normalizeSong(id: string, data: Partial<Song>): Song | null {
   if (!data.youtubeUrl || !data.youtubeId || !data.title || !data.thumbnail) {
@@ -45,6 +46,21 @@ function normalizePlaylist(id: string, data: Partial<Playlist>): Playlist | null
 function drawRandomSongs(list: Song[], count: number): Song[] {
   const randomized = [...list].sort(() => Math.random() - 0.5);
   return randomized.slice(0, count);
+}
+
+function mapRoundData(roundId: string, data: Record<string, unknown>): ActiveRound {
+  const songsData = Array.isArray(data.songs) ? data.songs : [];
+  const songs = songsData
+    .map((song, index) => normalizeSong(`song-${index}`, song as Partial<Song>))
+    .filter((song): song is Song => song !== null);
+
+  return {
+    id: typeof data.id === "string" ? data.id : roundId,
+    playlistId: typeof data.playlistId === "string" ? data.playlistId : "",
+    songIds: Array.isArray(data.songIds) ? (data.songIds as string[]) : songs.map((song) => song.id),
+    songs,
+    isActive: Boolean(data.isActive),
+  };
 }
 
 export async function createPlaylist(name: string) {
@@ -91,13 +107,18 @@ export async function startRoundFromPlaylist(playlistId: string) {
   const selectedSongs = drawRandomSongs(playlistSongs, 3);
   const roundId = `round-${Date.now()}`;
 
-  await setDoc(doc(db, ACTIVE_ROUNDS_COLLECTION, ACTIVE_ROUND_DOC_ID), {
+  await setDoc(doc(db, VOTING_ROUNDS_COLLECTION, roundId), {
     id: roundId,
     playlistId,
     songIds: selectedSongs.map((song) => song.id),
     songs: selectedSongs,
     isActive: true,
     startedAt: serverTimestamp(),
+  });
+
+  await setDoc(doc(db, ACTIVE_ROUNDS_COLLECTION, ACTIVE_ROUND_DOC_ID), {
+    roundId,
+    updatedAt: serverTimestamp(),
   });
 
   return {
@@ -107,6 +128,17 @@ export async function startRoundFromPlaylist(playlistId: string) {
     songs: selectedSongs,
     isActive: true,
   } satisfies ActiveRound;
+}
+
+export function subscribeToVotingRound(roundId: string, onRoundChange: (round: ActiveRound | null) => void) {
+  return onSnapshot(doc(db, VOTING_ROUNDS_COLLECTION, roundId), (snapshot) => {
+    if (!snapshot.exists()) {
+      onRoundChange(null);
+      return;
+    }
+
+    onRoundChange(mapRoundData(roundId, snapshot.data()));
+  });
 }
 
 export function subscribeToActiveRound(onRoundChange: (round: ActiveRound | null) => void) {
@@ -117,43 +149,45 @@ export function subscribeToActiveRound(onRoundChange: (round: ActiveRound | null
     }
 
     const data = snapshot.data();
-    const songsData = Array.isArray(data.songs) ? data.songs : [];
-    const songs = songsData
-      .map((song, index) => normalizeSong(`song-${index}`, song as Partial<Song>))
-      .filter((song): song is Song => song !== null);
+    const roundId = typeof data.roundId === "string" ? data.roundId : null;
 
-    const round: ActiveRound = {
-      id: typeof data.id === "string" ? data.id : ACTIVE_ROUND_DOC_ID,
-      playlistId: typeof data.playlistId === "string" ? data.playlistId : "",
-      songIds: Array.isArray(data.songIds) ? (data.songIds as string[]) : songs.map((song) => song.id),
-      songs,
-      isActive: Boolean(data.isActive),
-    };
+    if (!roundId) {
+      onRoundChange(null);
+      return;
+    }
 
-    onRoundChange(round);
+    getDoc(doc(db, VOTING_ROUNDS_COLLECTION, roundId)).then((roundSnapshot) => {
+      if (!roundSnapshot.exists()) {
+        onRoundChange(null);
+        return;
+      }
+
+      onRoundChange(mapRoundData(roundId, roundSnapshot.data()));
+    });
   });
 }
 
 export async function getActiveRound() {
-  const snapshot = await getDoc(doc(db, ACTIVE_ROUNDS_COLLECTION, ACTIVE_ROUND_DOC_ID));
+  const activeSnapshot = await getDoc(doc(db, ACTIVE_ROUNDS_COLLECTION, ACTIVE_ROUND_DOC_ID));
 
-  if (!snapshot.exists()) {
+  if (!activeSnapshot.exists()) {
     return null;
   }
 
-  const data = snapshot.data();
-  const songsData = Array.isArray(data.songs) ? data.songs : [];
-  const songs = songsData
-    .map((song, index) => normalizeSong(`song-${index}`, song as Partial<Song>))
-    .filter((song): song is Song => song !== null);
+  const activeData = activeSnapshot.data();
+  const roundId = typeof activeData.roundId === "string" ? activeData.roundId : null;
 
-  return {
-    id: typeof data.id === "string" ? data.id : ACTIVE_ROUND_DOC_ID,
-    playlistId: typeof data.playlistId === "string" ? data.playlistId : "",
-    songIds: Array.isArray(data.songIds) ? (data.songIds as string[]) : songs.map((song) => song.id),
-    songs,
-    isActive: Boolean(data.isActive),
-  } satisfies ActiveRound;
+  if (!roundId) {
+    return null;
+  }
+
+  const roundSnapshot = await getDoc(doc(db, VOTING_ROUNDS_COLLECTION, roundId));
+
+  if (!roundSnapshot.exists()) {
+    return null;
+  }
+
+  return mapRoundData(roundId, roundSnapshot.data());
 }
 
 export async function saveVoteToFirestore(vote: Vote) {
