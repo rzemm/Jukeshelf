@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ensureAnonymousAuth } from "@/lib/auth";
 import { Song } from "@/lib/types";
 
 type VoteCountMap = Record<string, number>;
@@ -28,6 +29,12 @@ function getVotePercentage(votes: number, totalVotes: number): number {
 export function VotingScreen({ songs, initialVoteCounts, previousWinnerSong }: VotingScreenProps) {
   const [votedSongId, setVotedSongId] = useState<string | null>(null);
   const [voteCounts, setVoteCounts] = useState<VoteCountMap>(initialVoteCounts);
+
+  useEffect(() => {
+    ensureAnonymousAuth().catch((error) => {
+      console.error("Anonymous auth failed:", error);
+    });
+  }, []);
 
   const votedSong = useMemo(
     () => songs.find((song) => song.id === votedSongId) ?? null,
