@@ -50,6 +50,6 @@ export function pickRoundWinner(roundSongs: Song[], voteCountMap: VoteCountMap):
   return leaderSongs[randomIndex];
 }
 
-export function createNextRoundSongs(): Song[] {
-  return drawRandomSongs(songs, 3);
+export function createNextRoundSongs(songLibrary: Song[]): Song[] {
+  return drawRandomSongs(songLibrary, 3);
 }

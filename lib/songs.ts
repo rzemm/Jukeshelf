@@ -2,7 +2,7 @@ import { Song } from "./types";
 
 const PLACEHOLDER_THUMBNAIL = "/window.svg";
 
-function getYoutubeIdFromUrl(youtubeUrl: string): string | null {
+export function getYoutubeIdFromUrl(youtubeUrl: string): string | null {
   try {
     const url = new URL(youtubeUrl);
 
