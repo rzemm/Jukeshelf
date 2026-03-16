@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   activeRoundSongs,
   activeRoundVotes,
@@ -10,6 +10,7 @@ import {
   getTotalVotes,
   pickRoundWinner,
 } from "@/lib/round";
+import { addSongToFirestore, fetchSongsFromFirestore } from "@/lib/firestore";
 import { createSong, getYoutubeIdFromUrl, songs } from "@/lib/songs";
 import { Song } from "@/lib/types";
 
@@ -24,7 +25,19 @@ export default function AdminPage() {
 
   const totalVotes = useMemo(() => getTotalVotes(voteCounts), [voteCounts]);
 
-  function handleAddSong() {
+  useEffect(() => {
+    fetchSongsFromFirestore()
+      .then((firestoreSongs) => {
+        if (firestoreSongs.length > 0) {
+          setSongLibrary(firestoreSongs);
+        }
+      })
+      .catch((error) => {
+        console.error("Songs fetch failed:", error);
+      });
+  }, []);
+
+  async function handleAddSong() {
     const youtubeId = getYoutubeIdFromUrl(youtubeUrlInput.trim());
 
     if (!youtubeId) {
@@ -36,10 +49,17 @@ export default function AdminPage() {
     const songTitle = songTitleInput.trim() || `Nowy utwór (${youtubeId})`;
 
     const newSong = createSong(songId, songTitle, youtubeUrlInput.trim());
-    setSongLibrary((currentSongs) => [...currentSongs, newSong]);
-    setYoutubeUrlInput("");
-    setSongTitleInput("");
-    setFormMessage("Dodano utwór do biblioteki.");
+
+    try {
+      await addSongToFirestore(newSong);
+      setSongLibrary((currentSongs) => [...currentSongs, newSong]);
+      setYoutubeUrlInput("");
+      setSongTitleInput("");
+      setFormMessage("Dodano utwór do biblioteki i zapisano w bazie.");
+    } catch (error) {
+      console.error("Song save failed:", error);
+      setFormMessage("Nie udało się zapisać utworu do bazy.");
+    }
   }
 
   function handleStartNextRound() {
