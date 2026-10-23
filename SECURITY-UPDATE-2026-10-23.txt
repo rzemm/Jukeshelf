@@ -1,0 +1,4 @@
+Security update, 2026-10-23
+Next.js and Firebase dependencies updated; gRPC pinned to 1.14.5. Node 24.22.1 is required.
+Known remaining advisory: braces 3.0.3 (GHSA-vfj7-8cjw-p6xm), reached through the development ESLint Next -> fast-glob -> micromatch chain. No fixed upstream release is available. Repository-controlled lint globs do not establish untrusted-input exploitation. Do not use npm audit fix --force to downgrade Next tooling. Recheck when an upstream patch becomes available.
+https://github.com/micromatch/braces/issues/84

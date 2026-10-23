@@ -17,7 +17,7 @@ import {
 import { createSong, getYoutubeIdFromUrl } from "@/lib/songs";
 import { Playlist, Song, Vote } from "@/lib/types";
 
-import { loadYouTubeApi } from "@/lib/youtube";
+import { loadYouTubeApi, type YouTubePlayer } from "@/lib/youtube";
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -42,8 +42,9 @@ export default function AdminPage() {
   const [playerEnabled, setPlayerEnabled] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
 
+  const nowPlayingVideoId = nowPlayingSong?.youtubeId;
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const activePlayerRef = useRef<any>(null);
+  const activePlayerRef = useRef<YouTubePlayer | null>(null);
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const selectedPlaylist = useMemo(
@@ -82,6 +83,8 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!activeRoundId) {
+      // Clear stale subscription data when the round is removed.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRoundSongs([]);
       return;
     }
@@ -92,6 +95,8 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!activeRoundId) {
+      // Clear stale subscription data when the round is removed.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRoundVotes([]);
       return;
     }
@@ -124,12 +129,12 @@ export default function AdminPage() {
       setTimeRemaining(null);
     };
 
-    if (!playerEnabled || !nowPlayingSong) {
+    if (!playerEnabled || !nowPlayingVideoId) {
       cleanup();
       return;
     }
 
-    const videoId = nowPlayingSong.youtubeId;
+    const videoId = nowPlayingVideoId;
     let isCurrent = true;
 
     loadYouTubeApi().then(() => {
@@ -164,7 +169,7 @@ export default function AdminPage() {
       isCurrent = false;
       cleanup();
     };
-  }, [playerEnabled, nowPlayingSong?.youtubeId]);
+  }, [playerEnabled, nowPlayingVideoId]);
 
   async function handleCreatePlaylist() {
     const playlistName = playlistNameInput.trim();

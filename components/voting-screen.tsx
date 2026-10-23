@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ensureAnonymousAuth } from "@/lib/auth";
 import { saveVoteToFirestore, subscribeToRoundVotes } from "@/lib/firestore";
 import { Song } from "@/lib/types";
-import { loadYouTubeApi } from "@/lib/youtube";
+import { loadYouTubeApi, type YouTubePlayer } from "@/lib/youtube";
 
 type VoteCountMap = Record<string, number>;
 
@@ -36,8 +36,9 @@ export function VotingScreen({ songs, initialVoteCounts, nowPlayingSong, nowPlay
   const [isSubmittingVote, setIsSubmittingVote] = useState(false);
   const [backgroundSoundEnabled, setBackgroundSoundEnabled] = useState(false);
 
+  const nowPlayingVideoId = nowPlayingSong?.youtubeId;
   const bgWrapperRef = useRef<HTMLDivElement>(null);
-  const bgPlayerRef = useRef<any>(null);
+  const bgPlayerRef = useRef<YouTubePlayer | null>(null);
 
   useEffect(() => {
     let unsubscribeVotes: (() => void) | undefined;
@@ -78,12 +79,12 @@ export function VotingScreen({ songs, initialVoteCounts, nowPlayingSong, nowPlay
       }
     };
 
-    if (!nowPlayingSong) {
+    if (!nowPlayingVideoId) {
       cleanup();
       return;
     }
 
-    const videoId = nowPlayingSong.youtubeId;
+    const videoId = nowPlayingVideoId;
     const startedAtMs = nowPlayingStartedAtMs;
     let isCurrent = true;
 
@@ -128,7 +129,7 @@ export function VotingScreen({ songs, initialVoteCounts, nowPlayingSong, nowPlay
       isCurrent = false;
       cleanup();
     };
-  }, [nowPlayingSong?.youtubeId, nowPlayingStartedAtMs]);
+  }, [nowPlayingVideoId, nowPlayingStartedAtMs]);
 
   useEffect(() => {
     if (!bgPlayerRef.current) return;

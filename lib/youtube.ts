@@ -1,6 +1,24 @@
+export interface YouTubePlayer {
+  destroy(): void;
+  getDuration(): number;
+  getCurrentTime(): number;
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
+  playVideo(): void;
+  mute(): void;
+  unMute(): void;
+}
+
+interface YouTubeApi {
+  Player: new (element: HTMLElement, options: {
+    videoId: string;
+    playerVars: Record<string, number>;
+    events: { onReady?: () => void; onStateChange?: (event: { data: number }) => void };
+  }) => YouTubePlayer;
+}
+
 declare global {
   interface Window {
-    YT: any;
+    YT: YouTubeApi;
     onYouTubeIframeAPIReady: () => void;
   }
 }
